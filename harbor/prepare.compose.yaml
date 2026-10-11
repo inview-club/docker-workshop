@@ -1,0 +1,21 @@
+services:
+  prepare:
+    image: goharbor/prepare:v2.14.0
+    platform: linux/amd64
+    # Как в официальном prepare. Доступ к hostfs ограничен каталогом runtime.
+    privileged: true
+    working_dir: /usr/src/app
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - python3 /lab/init.py && python3 main.py prepare --with-trivy
+    environment:
+      HARBOR_LAB_ROOT: ${HARBOR_LAB_ROOT:?Run prepare.sh first}
+      HARBOR_ADMIN_PASSWORD: ${HARBOR_ADMIN_PASSWORD:?Set .env}
+      HARBOR_DB_PASSWORD: ${HARBOR_DB_PASSWORD:?Set .env}
+    volumes:
+      - ./:/lab:ro
+      - ./runtime/input:/input
+      - ./runtime/data:/data
+      - ./runtime:/compose_location
+      - ./runtime/common/config:/config
+      - ${HARBOR_LAB_ROOT}/runtime:/hostfs${HARBOR_LAB_ROOT}/runtime

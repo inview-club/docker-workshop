@@ -1,0 +1,4 @@
+# Намеренно плохой пример для разбора предупреждений Hadolint.
+FROM alpine:latest
+RUN apk add curl
+CMD echo hello

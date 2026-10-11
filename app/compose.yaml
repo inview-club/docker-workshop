@@ -1,0 +1,31 @@
+services:
+  web:
+    # Сборка использует Dockerfile из текущего каталога.
+    build: .
+    image: club-demo:1.0
+    # Доступ только с этого компьютера.
+    ports: ["127.0.0.1:8080:8080"]
+    environment:
+      # redis — имя сервиса в общей сети Compose.
+      REDIS_HOST: redis
+    depends_on:
+      redis:
+        # Запускаем web после успешной проверки Redis.
+        condition: service_healthy
+    read_only: true
+    tmpfs: ["/tmp"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+  redis:
+    image: redis:7.4-alpine
+    # AOF сохраняет счётчик на диске.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  # Named volume переживает down и пересоздание контейнера.
+  redis-data:

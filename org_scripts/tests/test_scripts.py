@@ -63,10 +63,10 @@ CURL = r'''#!/usr/bin/env python3
 import json,os
 from pathlib import Path
 p=Path(os.environ['MOCK_STATE']); s=json.loads(p.read_text())
-s['calls'].append(['curl'])
+s['calls'].append(['curl']+__import__('sys').argv[1:])
 p.write_text(json.dumps(s))
 if os.environ.get('MOCK_HTTP_FAIL'): raise SystemExit(1)
-print('Hello from multistage! UID=10001' if s.get('mode')=='multistage' else
+print('{"status":"healthy"}' if s.get('mode')=='harbor' else 'Hello from multistage! UID=10001' if s.get('mode')=='multistage' else
       '{"status":"ok","backend":"'+('redis' if s.get('mode')=='compose' else 'memory')+'"}')
 '''
 
@@ -96,13 +96,14 @@ class ScriptTests(unittest.TestCase):
     def write(self, state):
         self.state.write_text(json.dumps(state))
 
-    def run_script(self, name, success=True):
-        result = subprocess.run(['bash', str(self.repo/'org_scripts'/name)], cwd='/', env=self.env, capture_output=True, text=True)
+    def run_script(self, name, success=True, pasted=False):
+        script=self.repo/'org_scripts'/name
+        command=['bash','-c',script.read_text()] if pasted else ['bash',str(script)]
+        result = subprocess.run(command, cwd=self.repo, env=self.env, capture_output=True, text=True)
         if success:
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
         else:
             self.assertNotEqual(result.returncode, 0)
-        self.assertFalse((self.repo/'org_scripts/.state/task.lock').exists())
         self.assertFalse(list(self.root.glob('docker-workshop.*')))
         self.assertFalse(any(c[:2] in (['image','rm'], ['system','prune'], ['builder','prune']) or c[0]=='rmi' for c in self.read()['calls']))
         return result
@@ -110,7 +111,7 @@ class ScriptTests(unittest.TestCase):
     def test_nginx_twice_keeps_image_and_cleans_container(self):
         self.run_script('basic/01-nginx.sh')
         self.env['WORKSHOP_OFFLINE']='1'
-        self.run_script('basic/01-nginx.sh')
+        self.run_script('basic/01-nginx.sh',pasted=True)
         s=self.read()
         self.assertEqual(sum(c[0]=='pull' for c in s['calls']),1)
         self.assertIn('nginx:stable', s['images'])
@@ -136,7 +137,7 @@ class ScriptTests(unittest.TestCase):
         source=self.repo/'app/app.py'; original=source.read_bytes()
         self.run_script('basic/02-dockerfile.sh')
         self.env['WORKSHOP_OFFLINE']='1'
-        self.run_script('basic/02-dockerfile.sh')
+        self.run_script('basic/02-dockerfile.sh',pasted=True)
         self.assertEqual(source.read_bytes(),original)
         self.assertIn('club-demo:cache-demo',self.read()['images'])
 
@@ -144,7 +145,7 @@ class ScriptTests(unittest.TestCase):
         s=self.read(); s['mode']='compose'; self.write(s)
         self.run_script('basic/03-compose.sh')
         self.env['WORKSHOP_OFFLINE']='1'
-        self.run_script('basic/03-compose.sh')
+        self.run_script('basic/03-compose.sh',pasted=True)
         calls=self.read()['calls']
         self.assertFalse(any('-v' in c for c in calls if 'down' in c))
         self.assertEqual(self.read()['visits'],4)
@@ -157,28 +158,48 @@ class ScriptTests(unittest.TestCase):
                 self.env['WORKSHOP_OFFLINE']='0'
                 self.run_script('advanced/'+script)
                 self.env['WORKSHOP_OFFLINE']='1'
-                self.run_script('advanced/'+script)
+                self.run_script('advanced/'+script,pasted=True)
         self.assertFalse(self.read()['volumes'])
         self.assertFalse(self.read()['containers'])
 
     def test_harbor_orchestration_twice_keeps_data(self):
-        # Здесь проверяется shell-порядок; API и статусы отдельно в test_harbor.py.
-        (self.repo/'org_scripts/lib/harbor.py').write_text(
-            'import sys\nfrom pathlib import Path\np=Path(__file__).parents[1]/".state/api-actions"\n'
-            'with p.open("a") as f: f.write(sys.argv[1]+"\\n")\n')
+        s=self.read(); s['mode']='harbor'; self.write(s)
         data=self.repo/'harbor/runtime/data'; data.mkdir(parents=True)
         marker=data/'keep-me'; marker.write_text('retained')
         self.run_script('basic/04-harbor.sh')
         self.env['WORKSHOP_OFFLINE']='1'
-        self.run_script('basic/04-harbor.sh')
+        self.run_script('basic/04-harbor.sh',pasted=True)
         self.assertEqual(marker.read_text(),'retained')
-        actions=(self.repo/'org_scripts/.state/api-actions').read_text().splitlines()
-        self.assertEqual(actions,['health']*2)
         calls=self.read()['calls']
         self.assertEqual(sum('trivy' in c and '--download-db-only' in c for c in calls),1)
         self.assertFalse(any('down' in c for c in calls))
         self.assertFalse(any(c[0] in ('build', 'login', 'tag', 'push', 'pull') and not (c[0] == 'pull' and c[1].startswith('goharbor/')) for c in calls))
         self.assertNotIn('club-demo:1.0', self.read()['images'])
+
+
+    def test_harbor_never_healthy_fails_without_database_download(self):
+        self.env['MOCK_HTTP_FAIL']='1'
+        self.run_script('basic/04-harbor.sh',success=False)
+        calls=self.read()['calls']
+        self.assertFalse(any('--download-db-only' in c for c in calls))
+
+    def test_nginx_commands_work_when_pasted_into_bash(self):
+        # bash -c не задаёт $0 и BASH_SOURCE как путь к учебному скрипту.
+        # Это воспроизводит вставку команд в терминал из корня репозитория.
+        text=(self.repo/'org_scripts/basic/01-nginx.sh').read_text()
+        result=subprocess.run(['bash','-c',text],cwd=self.repo,env=self.env,capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertFalse(self.read()['containers'])
+
+    def test_all_tasks_are_self_contained(self):
+        self.assertFalse((self.repo/'org_scripts/lib').exists())
+        tasks=list((self.repo/'org_scripts/basic').glob('*.sh'))+list((self.repo/'org_scripts/advanced').glob('*.sh'))
+        self.assertEqual(len(tasks),9)
+        for script in tasks:
+            text=script.read_text()
+            self.assertNotIn('source ',text)
+            self.assertNotIn('BASH_SOURCE',text)
+            self.assertNotIn('bash "$repo_root/',text)
 
 
 if __name__ == '__main__':

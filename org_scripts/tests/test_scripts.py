@@ -41,7 +41,10 @@ if a[0]=='run':
   text=sys.stdin.read()
   if 'alpine:latest' in text: done('DL3007 DL3018 DL3019 DL3025',1)
   done()
- if 'python:3.12-slim' in a: done('50000 100000\n67108864\n64')
+ if 'python:3.12-slim' in a:
+  if '-c' in a and any('sched_getaffinity' in arg for arg in a): done(s.get('allowed_cpus','0,1'))
+  cpu=a[a.index('--cpuset-cpus')+1] if '--cpuset-cpus' in a else '0'
+  done('50000 100000\n67108864\n64\nCpuset проверен: CPU '+cpu+'\nNamespaces родителя и потомка совпадают.')
  if 'club-volume-demo:1.0' in a:
   if 'cat' in a: done('written by container 1')
   if 'sh' in a: done()
@@ -237,6 +240,24 @@ class ScriptTests(unittest.TestCase):
         self.assertIn('club-advanced:1.0  7MB',result.stdout)
         listed=[c[2] for c in self.read()['calls'] if c[:2]==['image','ls']]
         self.assertEqual(listed,['club-advanced-build:1.0','club-advanced:1.0'])
+
+
+    def test_cgroups_uses_first_available_cpu_and_shows_namespaces(self):
+        s=self.read(); s['allowed_cpus']='2,3'; self.write(s)
+        result=self.run_script('advanced/01-cgroups.sh')
+        runs=[c for c in self.read()['calls'] if c[0]=='run']
+        limited=[c for c in runs if '--cpuset-cpus' in c]
+        self.assertEqual(len(limited),1)
+        self.assertEqual(limited[0][limited[0].index('--cpuset-cpus')+1],'2')
+        self.assertIn('Cpuset проверен: CPU 2',result.stdout)
+        self.assertIn('Namespaces родителя и потомка совпадают.',result.stdout)
+        self.assertTrue(all('--privileged' not in c and '--pull=never' in c for c in runs))
+
+    def test_cgroups_single_available_cpu_is_explained(self):
+        s=self.read(); s['allowed_cpus']='3'; self.write(s)
+        result=self.run_script('advanced/01-cgroups.sh')
+        self.assertIn('Доступен один CPU',result.stdout)
+        self.assertIn('Cpuset проверен: CPU 3',result.stdout)
 
 
 if __name__ == '__main__':

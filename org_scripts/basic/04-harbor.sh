@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Задание 4: Harbor, база Trivy, проект, push/pull и завершённый отчёт.
+# Подготовка задания 4: работающий Harbor с Trivy и загруженной базой.
 source "$(cd "$(dirname "$0")/.." && pwd)/lib/common.sh"
 init
 need python3
 compose_init
-build_app
 helper="$WORKSHOP_ROOT/org_scripts/lib/harbor.py"
 cd "$WORKSHOP_ROOT/harbor"
 step 'Проверяем образы Harbor; уже скачанные образы не обновляем'
@@ -36,9 +35,5 @@ fi
 "${HARBOR_COMPOSE[@]}" exec -T trivy-adapter sh -ec \
   'test -s /home/scanner/.cache/trivy/db/trivy.db && test -s /home/scanner/.cache/trivy/db/metadata.json' \
   || fail 'База Trivy не готова. Повторите скрипт с WORKSHOP_OFFLINE=0 заранее при хорошем интернете.'
-step 'Создаём приватный проект club и включаем автоматическое сканирование'
-python3 "$helper" project
-step 'Публикуем образ, проверяем pull и дожидаемся отчёта Trivy'
-python3 "$helper" publish
-step 'Готово: http://localhost:8081, проект club, образ counter:1.0 и отчёт Trivy'
+step 'Готово: Harbor с Trivy запущен, база уязвимостей загружена. Портал: http://localhost:8081'
 printf 'Harbor и его данные оставлены для просмотра. Остановка: cd "%s/harbor" && docker compose down\n' "$WORKSHOP_ROOT"

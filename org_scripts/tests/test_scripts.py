@@ -173,10 +173,12 @@ class ScriptTests(unittest.TestCase):
         self.run_script('basic/04-harbor.sh')
         self.assertEqual(marker.read_text(),'retained')
         actions=(self.repo/'org_scripts/.state/api-actions').read_text().splitlines()
-        self.assertEqual(actions,['health','project','publish']*2)
+        self.assertEqual(actions,['health']*2)
         calls=self.read()['calls']
         self.assertEqual(sum('trivy' in c and '--download-db-only' in c for c in calls),1)
         self.assertFalse(any('down' in c for c in calls))
+        self.assertFalse(any(c[0] in ('build', 'login', 'tag', 'push', 'pull') and not (c[0] == 'pull' and c[1].startswith('goharbor/')) for c in calls))
+        self.assertNotIn('club-demo:1.0', self.read()['images'])
 
 
 if __name__ == '__main__':

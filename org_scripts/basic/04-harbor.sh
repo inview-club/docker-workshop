@@ -34,8 +34,7 @@ fi
 # 2. Проверяем образы подготовки и всех сервисов Harbor.
 cd "$repo_root/harbor"
 # В compose.yaml перечислены образы всех сервисов; уже скачанные не обновляем.
-image_refs=$(awk '$1 == "image:" {print $2}' compose.yaml)
-for image_ref in goharbor/prepare:v2.14.0 $image_refs; do
+while IFS= read -r image_ref; do
   if ! docker image inspect "$image_ref" >/dev/null 2>&1; then
     if [ "$offline" = 1 ]; then
       printf 'В кэше нет %s. Загрузите образ до занятия.\n' "$image_ref" >&2
@@ -43,7 +42,10 @@ for image_ref in goharbor/prepare:v2.14.0 $image_refs; do
     fi
     docker pull "$image_ref"
   fi
-done
+done < <(
+  printf '%s\n' goharbor/prepare:v2.14.0
+  awk '$1 == "image:" {print $2}' compose.yaml
+)
 
 # 3. Подготавливаем конфигурацию и ключи: те же шаги, что в harbor/prepare.sh.
 export HARBOR_LAB_ROOT="$(pwd -P)"

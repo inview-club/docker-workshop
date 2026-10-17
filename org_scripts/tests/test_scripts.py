@@ -20,6 +20,7 @@ if a[:2]==['image','inspect']:
  if a[2] not in s['images']: done(code=1)
  done('[]' if '--format' in a else '{}')
 if a[0]=='pull':
+ if '\n' in a[1]: done('invalid reference format',1)
  s['images'].append(a[1]); done()
 if a[0]=='build':
  s['images'].append(a[a.index('-t')+1]); done('CACHED')
@@ -200,6 +201,25 @@ class ScriptTests(unittest.TestCase):
             self.assertNotIn('source ',text)
             self.assertNotIn('BASH_SOURCE',text)
             self.assertNotIn('bash "$repo_root/',text)
+
+
+    @unittest.skipUnless(shutil.which('zsh'), 'Для проверки требуется zsh')
+    def test_harbor_image_list_pasted_into_zsh(self):
+        text=(self.repo/'org_scripts/basic/04-harbor.sh').read_text()
+        block=text[text.index('# 2. Проверяем образы'):text.index('# 3. Подготавливаем')]
+        self.env['WORKSHOP_REPO']=str(self.repo)
+        result=subprocess.run(['zsh','-fc','repo_root="$WORKSHOP_REPO"; offline=0\n'+block],
+                              cwd=self.repo,env=self.env,capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        expected=['goharbor/prepare:v2.14.0']+[line.split()[1] for line in
+                  (self.repo/'harbor/compose.yaml').read_text().splitlines() if line.strip().startswith('image:')]
+        pulled=[c[1] for c in self.read()['calls'] if c[0]=='pull']
+        self.assertEqual(pulled,expected)
+        # Повторная вставка использует локальные образы без новых pull.
+        result=subprocess.run(['zsh','-fc','repo_root="$WORKSHOP_REPO"; offline=1\n'+block],
+                              cwd=self.repo,env=self.env,capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertEqual([c[1] for c in self.read()['calls'] if c[0]=='pull'],expected)
 
 
 if __name__ == '__main__':

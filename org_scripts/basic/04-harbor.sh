@@ -104,8 +104,10 @@ fi
   'test -s /home/scanner/.cache/trivy/db/trivy.db && test -s /home/scanner/.cache/trivy/db/metadata.json' \
   || { printf 'База Trivy не готова. Загрузите её до занятия с WORKSHOP_OFFLINE=0.\n' >&2; exit 1; }
 
-# 7. Убираем временный файл. Harbor, его данные и база Trivy остаются.
+# 7. Останавливаем Harbor. Образы, данные и база Trivy сохраняются.
+"${compose[@]}" -p harbor-lab "${compose_files[@]}" down
+
+# 8. Убираем временный файл.
 rm -rf -- "$work_dir"
-printf 'Готово: Harbor с Trivy запущен, база загружена. http://localhost:8081\n'
+printf 'Готово: Harbor остановлен. Образы, данные и база Trivy сохранены.\n'
 # Проекты Harbor, авторизацию, push/pull и сканирование здесь не выполняем.
-# Остановка стенда после занятия: docker compose down (из каталога harbor/).

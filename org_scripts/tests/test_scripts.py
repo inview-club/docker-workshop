@@ -19,6 +19,9 @@ if a[0]=='info': done('ok')
 if a[:2]==['image','inspect']:
  if a[2] not in s['images']: done(code=1)
  done('[]' if '--format' in a else '{}')
+if a[:2]==['image','ls']:
+ ref=a[2]
+ done(ref+'  '+('250MB' if ref=='club-advanced-build:1.0' else '7MB'))
 if a[0]=='pull':
  if '\n' in a[1]: done('invalid reference format',1)
  s['images'].append(a[1]); done()
@@ -173,7 +176,12 @@ class ScriptTests(unittest.TestCase):
         self.assertEqual(marker.read_text(),'retained')
         calls=self.read()['calls']
         self.assertEqual(sum('trivy' in c and '--download-db-only' in c for c in calls),1)
-        self.assertFalse(any('down' in c for c in calls))
+        stops=[i for i,c in enumerate(calls) if 'down' in c]
+        checks=[i for i,c in enumerate(calls) if 'exec' in c and any('test -s ' in arg for arg in c)]
+        self.assertEqual(len(stops),2)
+        self.assertEqual(len(checks),2)
+        self.assertTrue(all(check < stop for check,stop in zip(checks,stops)))
+        self.assertFalse(any('-v' in calls[i] or '--volumes' in calls[i] for i in stops))
         self.assertFalse(any(c[0] in ('build', 'login', 'tag', 'push', 'pull') and not (c[0] == 'pull' and c[1].startswith('goharbor/')) for c in calls))
         self.assertNotIn('club-demo:1.0', self.read()['images'])
 
@@ -220,6 +228,15 @@ class ScriptTests(unittest.TestCase):
                               cwd=self.repo,env=self.env,capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         self.assertEqual([c[1] for c in self.read()['calls'] if c[0]=='pull'],expected)
+
+
+    def test_multistage_displays_human_readable_sizes(self):
+        s=self.read(); s['mode']='multistage'; self.write(s)
+        result=self.run_script('advanced/02-multistage.sh')
+        self.assertIn('club-advanced-build:1.0  250MB',result.stdout)
+        self.assertIn('club-advanced:1.0  7MB',result.stdout)
+        listed=[c[2] for c in self.read()['calls'] if c[:2]==['image','ls']]
+        self.assertEqual(listed,['club-advanced-build:1.0','club-advanced:1.0'])
 
 
 if __name__ == '__main__':

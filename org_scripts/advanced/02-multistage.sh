@@ -69,7 +69,10 @@ response=$(curl --noproxy '*' -fsS --retry 30 --retry-connrefused --retry-delay 
 printf '%s\n' "$response"
 test "$response" = 'Hello from multistage! UID=10001'
 
-# 4. Сравниваем размеры в байтах. Удаляем контейнер, оба образа остаются.
-docker image inspect club-advanced-build:1.0 club-advanced:1.0 --format '{{index .RepoTags 0}} {{.Size}}'
+# 4. Сравниваем размеры. Docker image ls выводит их в читаемых единицах (kB, MB, GB).
+for image_ref in club-advanced-build:1.0 club-advanced:1.0; do
+  docker image ls "$image_ref" --format '{{.Repository}}:{{.Tag}}  {{.Size}}'
+done
+# Удаляем контейнер. Оба образа остаются.
 docker rm -f "$container_name"
 printf 'Готово: итоговый образ отвечает, UID равен 10001.\n'
